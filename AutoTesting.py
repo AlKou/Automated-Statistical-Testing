@@ -132,9 +132,9 @@ class AutoTesting():
             print('Critical:\t', x_res['Critical'])
             
         if x_res['Result']:
-            print('Test Result: \t Failed to reject! Data is normal! ')
+            print('Test Result: \t Failed to reject! Normal! ')
         else:
-            print('Test Result:\t Rejected! Data is not normal!')
+            print('Test Result:\t Rejected! Not normal!')
             
     def norm_plot(self, x):
         
@@ -143,7 +143,7 @@ class AutoTesting():
            
         Parameters:
         ----------
-        x : numpy.ndarray
+        x : list of numpy.ndarray
             The variable to plot
             
         Returns:
@@ -173,7 +173,7 @@ class AutoTesting():
         
         Parameters:
         ----------
-        x : numpy.ndarrays
+        x : list of numpy.ndarray
             The variables to test normality on
         report : bool
             True to display report, False not.
@@ -248,11 +248,11 @@ class AutoTesting():
     
     def homo_cal(self, x, norm_res, skews):
         
-        '''Calculate and return the variance homogeneity test result.
+        '''Calculate and return the homoscedasticity test result.
         
         Parameters:
         ----------
-        x : numpy.ndarrays
+        x : list of numpy.ndarray
             The variables to test on
         norm_res : dict 
             Results of normality test
@@ -264,7 +264,7 @@ class AutoTesting():
         homo_res : dict
             'Variables': number of variables tested
             'Statistic': statistic value calculated by the test
-            'Pvalue': p-value value calculated by the test
+            'Pvalue': p-value calculated by the test
             'Test': name of the test used
             'Result': True if homogeneous, False otherwise
             
@@ -296,12 +296,12 @@ class AutoTesting():
     
     def homo_report(self, homo_res):
         
-        '''Display statistic values of the homogeneity test. 
+        '''Display statistic values of the homoscedasticity test. 
         
         Parameters:
         ----------
         homo_res : dict
-            Test results from variance homogeneity test.
+            Test results from homoscedasticity test.
         
         Returns:
         -------
@@ -323,11 +323,11 @@ class AutoTesting():
     
     def homo_test(self, x, report=True):
         
-        '''Homogeneity of Variance testing. 
+        '''Homoscedasticity testing. 
         
         Parameters:
         ----------
-        x : numpy.ndarrays
+        x : list of numpy.ndarray
             Variables to test on
         report : bool
             True to display report, False not.
@@ -367,13 +367,13 @@ class AutoTesting():
                 
             return res
                 
-    def two_cal(self, x, norm_res, homo_res, skews):
+    def two_cal(self, x, norm_res, homo_res, skews, paired=False):
         
-        '''Calculate and return two sample comparison tests results.
+        '''Calculate and return two samples comparison tests results.
         
         Parameters:
         ----------
-        x : numpy.ndarrays
+        x : list of numpy.ndarray
             Variables to test on
         norm_res : dict
             Normality test results
@@ -381,85 +381,72 @@ class AutoTesting():
             Homogeneity test rerults
         skews : list
             Skewness values of all x variables
+        paired : bool
+            False for two independent variables. True Otherwise
             
         Returns:
         -------
-        res_ind : dict
-            Test results for independent samples
-            True if failed to reject hypothesis, False if not.
-        res_prd : dict
-            Test results for paired samples. 
-            True if failed to reject hypothesis, False if not.
+        res : dict
+            'Statistic': statistic value calculated by the test
+            'Pvalue': p-value calculated by the test
+            'Test': name of the test used
+            'Result': True if failed to reject null hypothesis, False otherwise
             
         Notes:
         -----
         None'''
         
-        res_ind = {}
-        res_prd = {}
+        res = {}
         
         if sum(norm_res.values()) == len(x) and all(abs(np.array(skews)) < .5): 
-        # All normal                
+        # If all normal 
+            if paired:# Paired samples
+                res['Statistic'] = ss.ttest_rel(x[0], x[1])[0]
+                res['Pvalue'] = ss.ttest_rel(x[0], x[1])[1]
+                res['Test'] = 'T-test with paired samples'
+            else: # Independent samples
+                if homo_res: # Variances equal
+                    res['Statistic'] = ss.ttest_ind(x[0], x[1])[0]
+                    res['Pvalue'] = ss.ttest_ind(x[0], x[1])[1]
+                    res['Test'] = 'T-test with independent samples'
+                else: # Variances unequal
+                    res['Statistic'] = ss.ttest_ind(x[0], x[1], equal_var=False)[0]
+                    res['Pvalue'] = ss.ttest_ind(x[0], x[1], equal_var=False)[1]
+                    res['Test'] = 'Welch\'s T-test'
 
-            # Independent variables
-            if homo_res: # Variance equal
-                res_ind['Statistic'] = ss.ttest_ind(x[0], x[1])[0]
-                res_ind['Pvalue'] = ss.ttest_ind(x[0], x[1])[1]
-                res_ind['Test'] = 'T-test with independent samples'
-            else: # Variance unequal
-                res_ind['Statistic'] = ss.ttest_ind(x[0], x[1], equal_var=False)[0]
-                res_ind['Pvalue'] = ss.ttest_ind(x[0], x[1], equal_var=False)[1]
-                res_ind['Test'] = 'Welch\'s T-test'
+        else: # If not all normal, use unparametric tests.  
+            if paired: # Paired samples
+                res['Statistic'] = ss.wilcoxon(x[0].reshape(-1), x[1].reshape(-1))[0]
+                res['Pvalue'] = ss.wilcoxon(x[0].reshape(-1), x[1].reshape(-1))[1]
+                res['Test'] = 'Wilcoxon signed-rank Test with Paired Samples'
+            else:# Independent samples
+                if all([len(x[0]), len(x[1])]) >= 20: # Sample size > 20
+                    res['Statistic'] = ss.mannwhitneyu(x[0], x[1])[0]
+                    res['Pvalue'] = ss.mannwhitneyu(x[0], x[1])[1]
+                    res['Test'] = 'Mann-Whitney U Test with Indepedent Samples'
+                else: # Sample size < 20
+                    res['Statistic'] = ss.ranksums(x[0], x[1])[0]
+                    res['Pvalue'] = ss.ranksums(x[0], x[1])[1]
+                    res['Test'] = 'Wilcoxon rank-sum Test with Indepedent Samples'
 
-            # Paired variables. Results from independent samples test are overrid
-            res_prd['Statistic'] = ss.ttest_rel(x[0], x[1])[0]
-            res_prd['Pvalue'] = ss.ttest_rel(x[0], x[1])[1]
-            res_prd['Test'] = 'T-test with paired samples'
-
-        else: # If not all normal, use unparametric tests.
-              # Don't have to assumme variance equality, 
-              # but do have to consider sample size                
-
-            # Independent variables
-            if all([len(x[0]), len(x[1])]) >= 20: # Sample size > 20
-                res_ind['Statistic'] = ss.mannwhitneyu(x[0], x[1])[0]
-                res_ind['Pvalue'] = ss.mannwhitneyu(x[0], x[1])[1]
-                res_ind['Test'] = 'Mann-Whitney U Test with Indepedent Samples'
-            else: # Sample size < 20
-                res_ind['Statistic'] = ss.ranksums(x[0], x[1])[0]
-                res_ind['Pvalue'] = ss.ranksums(x[0], x[1])[1]
-                res_ind['Test'] = 'Wilcoxon rank-sum Test with Indepedent Samples'
-
-            # Paired variables. Results from independent samples test are overridden
-            res_prd['Statistic'] = ss.wilcoxon(x[0].reshape(-1), x[1].reshape(-1))[0]
-            res_prd['Pvalue'] = ss.wilcoxon(x[0].reshape(-1), x[1].reshape(-1))[1]
-            res_prd['Test'] = 'Wilcoxon signed-rank Test with Paired Samples'
-        
         # Get the results based on fixed significance level
-        if res_ind['Pvalue'] >= .05:
-            res_ind['Result'] = True
+        if res['Pvalue'] >= .05:
+            res['Result'] = True
         else:
-            res_ind['Result'] =False
-
-        if res_prd['Pvalue'] >= .05:
-            res_prd['Result'] = True
-        else:
-            res_prd['Result'] =False
+            res['Result'] =False
             
-        return res_ind, res_prd
+        return res
             
-    def two_report(self, x, res_ind, res_prd):
+    def two_report(self, x, res):
         
         '''Display statistic values of two samples comparison tests.
         
         Parameters:
         ----------
-        x : numpy.ndarrays
+        x : list of numpy.ndarray
             Variables tested on
-        res_ind : dict
-            Results for independent samples comparison test
-        res_prd : dict
-            Results for paired samples comparison test
+        res : dict
+            Results of a two samples comparison test
             
         Returns:
         -------
@@ -469,50 +456,50 @@ class AutoTesting():
         -----
         None'''
         
-        if 'T-test' in res_ind['Test']: # Parametric make hypothesis about means
+        if 'T-test' in res['Test']: # Parametric makes hypothesis about means
             print('\nMean 1:\t', x[0].mean())
             print('Mean 2:\t', x[1].mean(),'\n')
-        else: # Unparametric make hypothesis about medians
+            print('Testing Method:\t', res['Test'])
+            print('Statistic:\t', res['Statistic'])
+            print('Pvalue: \t', res['Pvalue'])
+            if res['Result']:
+                print('Test Result:\t', 'Failed to reject! Means equal!\n')
+            else:
+                print('Test Result:\t', 'Reject! Means unequal!\n')
+        else: # Unparametric makes hypothesis about medians
             print('\nMedian 1:\t', np.median(x[0]))
             print('Median 2:\t', np.median(x[1]),'\n')
-        
-        # Independent samples
-        print('Testing Method:\t', res_ind['Test'])
-        print('Statistic:\t', res_ind['Statistic'])
-        print('Pvalue: \t', res_ind['Pvalue'])
-        if res_ind['Result']:
-            print('Test Result:\t', 'Failed to reject! Means equal!\n')
-        else:
-            print('Test Result:\t', 'Reject! Medians unequal!\n')
-         
-        # Paired samples
-        print('Testing Method:\t', res_prd['Test'])
-        print('Statistic:\t', res_prd['Statistic'])
-        print('Pvalue: \t', res_prd['Pvalue'])
-        if res_prd['Result']:
-            print('Test Result:\t', 'Failed to reject! Means equal!')
-        else:
-            print('Test Result:\t', 'Reject! Medians unequal!')
+            print('Testing Method:\t', res['Test'])
+            print('Statistic:\t', res['Statistic'])
+            print('Pvalue: \t', res['Pvalue'])
+            if res['Result']:
+                print('Test Result:\t', 'Failed to reject! Medians equal!\n')
+            else:
+                print('Test Result:\t', 'Reject! Medians unequal!\n')
                 
-    def compr_two(self, x, report=True):
+    def compr_two(self, x, paired=False, report=True):
         '''Conduct and return two samples comparision tests.
         
         Parameters:
         ----------
-        x : numpy.ndarrays
+        x : list of numpy.ndarrays
             Variables to compare
         report : bool
             True to display report, False not.
+        paired : bool
+            False for two independent variables. True Otherwise
             
         Returns:
         -------
-        A dict of results for independent and paired tests. 
-        True if equal, False if not.
+        res : dict
+            'Statistic': statistic value calculated by the test
+            'Pvalue': p-value value calculated by the test
+            'Test': name of the test used
+            'Result': True if failed to reject null hypothesis, False otherwise
             
         Notes:
         -----
-            Both independent and paired samples comparison 
-            results are calculated and returned. '''
+            None '''
         
         if len(x) == 1: # Data verification
             raise ValueError('\n>>> Error: Input dadta with two variables!\n')
@@ -523,15 +510,246 @@ class AutoTesting():
             skews = [ss.skew(i) for i in x]
             norm_res = self.norm_test(x, False)
             homo_res = self.homo_test(x, report)['Result']
-            two_res = {}
-            res_ind, res_prd = self.two_cal(x, norm_res, homo_res, skews)
-            two_res['Independent Samples'] = res_ind['Result']
-            two_res['Paired Samples'] = res_prd['Result']
+            res = self.two_cal(x, norm_res, homo_res, skews, paired)
             
             if report:  
-                self.two_report(x, res_ind, res_prd)
+                self.two_report(x, res)
                 print('\n>>> Two-Variable Comparison Test Done!')
                 print('='*60)
                 
-            return two_res
+            return res
+    
+    def welch_anova(self, x):
+        '''Conduct Welch's ANOVA and resturn its f statistic and p-value.
+        
+        Parameters:
+        ----------
+        x : list of numpy.ndarrays
+            Groups to conduct Welch's ANOVA on
+
+        Returns:
+        -------
+        A dict of results for Welch's ANOVA. 
+            'f-statistic' : f statistic value computed from the test
+            'Pvalue' : p-value of the test
+            
+        Notes:
+        -----
+            None '''
+        
+        sizes = [len(i) for i in x]
+        means = [np.mean(i) for i in x]
+        vrs = [np.var(i, ddof=1) for i in x]
+
+        wghts = [sizes[i] / vrs[i] for i in range(len(x))]
+        sum_w = sum(wghts)
+        means_p = [wghts[i] * means[i] for i in range(len(x))]
+        sum_means_p = sum(means_p)
+
+        a = [wghts[i] * (means[i] - sum_means_p / sum_w)**2 for i in range(len(x))]
+        b = [(1 - wghts[i] / sum_w)**2 / (sizes[i] - 1) for i in range(len(x))]
+        k = len(x)
+        sum_a = sum(a)
+        sum_b = sum(b)
+
+        F = sum_a / (k - 1) / (1 + 2 * sum_b * (k - 2) / (k**2 - 1))
+        df1 = k - 1
+        df2 = (k**2 - 1) / 3 / sum_b
+
+        Pvalue = ss.f.sf(F, df1, df2)
+
+        return {'F-statistic': F, 'Pvalue': Pvalue}
+    
+    def rm_anova(self, x):
+        '''Conduct Repeated Measures One-way ANOVA and resturn its 
+        f statistic and p-value.
+        
+        Parameters:
+        ----------
+        x : list of numpy.ndarrays
+            Groups to conduct Repeated Measures One-way ANOVA on
+
+        Returns:
+        -------
+        A dict of results for Repeated Measures One-way ANOVA.
+            'f-statistic' : f statistic value computed from the test
+            'Pvalue' : p-value of the test
+            
+        Notes:
+        -----
+            None '''
+        
+        k = len(x)
+        n = len(x[0])
+        N = k * n
+        
+        df_bt = k - 1
+        df_wi = N - k
+        df_sb = n - 1
+                
+        sum_row = [np.sum([x[i][j] for i in range(k)]) for j in range(n)]
+        sum_col = [np.sum(i) for i in x]
+        sum_x2 = np.sum([(x[i][j])**2 for i in range(k) for j in range(n)])
+        G = np.sum(sum_col)
+        
+        ss_nm = np.sum([sum_col[i]**2 / n for i in range(k)]) - G**2 / N
+        ss_dn = sum_x2 + G**2 / N \
+                - np.sum([sum_col[i]**2 / n for i in range(k)]) \
+                - np.sum([sum_row[i]**2 / k for i in range(n)])
+        
+        ms_nm = ss_nm / df_bt
+        ms_dn = ss_dn / df_bt / df_sb
+        
+        F = ms_nm / ms_dn
+        Pvalue = ss.f.sf(F, df_bt, df_bt * df_sb)
+        
+        return {'F-statistic': F, 'Pvalue': Pvalue}
+        
+        
+        
+            
+    def multi_cal(self, x, norm_res, homo_res, skews, repeated=False):
+        '''Calculate and return multiple samples comparison tests results.
+        
+        Parameters:
+        ----------
+        x : list of numpy.ndarray
+            Variables to test on
+        norm_res : dict
+            Normality test results
+        homo_res : dict
+            Homogeneity test rerults
+        skews : list
+            Skewness values of all x variables
+        repeated : bool
+            False for two independent variables. True Otherwise
+            
+        Returns:
+        -------
+        res : dict
+            'Statistic': statistic value calculated by the test
+            'Pvalue': p-value value calculated by the test
+            'Test': name of the test used
+            'Result': True if failed to reject null hypothesis, False otherwise
+            
+            
+        Notes:
+        -----
+        None'''
+        
+        res = {}
+        
+        if sum(norm_res.values()) == len(x) and all(abs(np.array(skews)) < .5): 
+        # If all normal use ANOVA
+            if repeated: # For repeated measures
+                res['Statistic'] = self.rm_anova(x)['F-statistic']
+                res['Pvalue'] = self.rm_anova(x)['Pvalue']
+                res['Test'] = 'Repeated Measures One-way ANOVA'
+            else: 
+                if homo_res: # Equal variances
+                    res['Statistic'] = ss.f_oneway(*x)[0]
+                    res['Pvalue'] = ss.f_oneway(*x)[1]
+                    res['Test'] = 'One-Way ANOVA'
+                else: # Unequal variances
+                    res['Statistic'] = self.welch_anova(x)['F-statistic']
+                    res['Pvalue'] = self.welch_anova(x)['Pvalue']
+                    res['Test'] = 'Welch\'s ANOVA'
+        else: # Nonparametric
+            if repeated: # For repeated measures
+                res['Statistic'] = ss.friedmanchisquare(*x)[0]
+                res['Pvalue'] = ss.friedmanchisquare(*x)[1]
+                res['Test'] = 'Friedman Test'
+            else:# For independent groups
+                res['Statistic'] = ss.kruskal(*x)[0]
+                res['Pvalue'] = ss.kruskal(*x)[1]
+                res['Test'] = 'Kruskal Wallis H-test'  
+            
+        if res['Pvalue'] >= .05:
+            res['Result'] = True
+        else:
+            res['Result'] = False
+            
+        return res
+    
+    def multi_report(self, x, res):
+        
+        '''Display statistic values of two samples comparison tests.
+        
+        Parameters:
+        ----------
+        x : list of numpy.ndarray
+            Variables tested on
+        res : dict
+            Results of multiple comparison test
+            
+        Returns:
+        -------
+        None
+        
+        Notes:
+        -----
+        None'''
+        
+        if 'ANOVA' in res['Test']: # Parametric makes hypothesis about means
+            for i in range(len(x)):
+                print('Mean {}:\t'.format(i+1), x[i].mean())
+            print('\nTesting Method:\t', res['Test'])
+            print('Statistic:\t', res['Statistic'])
+            print('Pvalue: \t', res['Pvalue'])
+            if res['Result']:
+                print('Test Result:\t', 'Failed to reject! Means equal!\n')
+            else:
+                print('Test Result:\t', 'Reject! Means unequal!\n')
+        else: # Unparametric makes hypothesis about medians
+            for i in range(len(x)):
+                print('Median {}:\t'.format(i+1), x[i].mean())
+            print('\nTesting Method:\t', res['Test'])
+            print('Statistic:\t', res['Statistic'])
+            print('Pvalue: \t', res['Pvalue'])
+            if res['Result']:
+                print('Test Result:\t', 'Failed to reject! Medians equal!')
+            else:
+                print('Test Result:\t', 'Reject! Medians unequal!')
+    
+    def compr_multi(self, x, repeated=False, report=True):
+        '''Conduct and return multiple comparision tests.
+        
+        Parameters:
+        ----------
+        x : list of numpy.ndarrays
+            Variables to compare
+        repeated : bool
+            False for independent groups. True Otherwise
+        report : bool
+            True to display report, False not.
+            
+        Returns:
+        -------
+        res : dict
+            'Statistic': statistic value calculated by the test
+            'Pvalue': p-value value calculated by the test
+            'Test': name of the test used
+            'Result': True if homogeneous, False otherwise
+            
+        Notes:
+        -----
+            None '''
+        
+        if len(x) < 3: # Data verification
+            raise ValueError('\n>>> Error: Input dadta with at leat three groups!\n')
+        else:
+            if report:
+                print('\n>>> Comparing groups...\n'.format(len(x)))
+                
+        norm_res = self.norm_test(x, False)
+        homo_res = self.homo_test(x, report)['Result']
+        skews = [ss.skew(i) for i in x]
+        res = self.multi_cal(x, norm_res, homo_res, skews, repeated)
+            
+        if report:  
+            self.multi_report(x, res)
+            print('\n>>> Multiple Comparison Done!')
+            print('='*60)
+        
+        return res
             
